@@ -1,0 +1,26 @@
+name: Sync App Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Cate jocuri (0 = toate, 2 pentru test)'
+        required: false
+        default: '0'
+  schedule:
+    - cron: '0 4 * * *'   # 04:00 UTC — ora diferita de Play Store ca sa nu se suprapuna
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install
+      - name: Run sync
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          LIMIT: ${{ github.event.inputs.limit }}
+        run: node sync-appstore.js
