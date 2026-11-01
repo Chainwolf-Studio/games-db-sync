@@ -1,24 +1,18 @@
 /**
- * Sincronizare Play Store -> Google Sheets, rulata pe GitHub Actions.
- *
- * Citeste package-urile din coloana "package_id" a filei PlayStore,
- * extrage datele cu google-play-scraper, si le scrie inapoi in sheet.
- *
- * Autentificare: service account (secret GOOGLE_CREDENTIALS in GitHub).
+ * Sincronizare App Store -> Google Sheets (GitHub Actions).
+ * Sursa: iTunes Lookup API (gratuit, public). Fara scraping, fara cheie.
  */
 
-import gplay from 'google-play-scraper';
 import { google } from 'googleapis';
 
-// ---- Config ----
 const SPREADSHEET_ID = '1BSMwXovXJxuX8XyfQA5kxZJPT54Kgkpzg4APXDTZb7k';
-const SHEET_NAME = 'PlayStore';
-const COUNTRY = 'us';
-const LANG = 'en';
-const SLEEP_MS = 1500;        // pauza intre jocuri (bland cu Google)
-const LIMIT = parseInt(process.env.LIMIT || '0', 10); // 0 = toate; altfel doar primele N (pentru test)
+const SHEET_NAME = 'AppStore';
+const COUNTRY = 'DE';      // DE = preturi in EUR
+const LANG = 'en_us';
+const SLEEP_MS = 1000;
+const LIMIT = parseInt(process.env.LIMIT || '0', 10);
+const NEW_ONLY = process.env.NEW_ONLY === '1';  // 1 = proceseaza doar randuri fara 'name'
 
-// ---- Auth Google Sheets ----
 function getAuth() {
   const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
   return new google.auth.GoogleAuth({
@@ -26,126 +20,107 @@ function getAuth() {
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
 }
-
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Extrage package id din URL sau accepta direct package id
-function extractPkg(raw) {
-  raw = String(raw || '').trim();
-  const m = raw.match(/[?&]id=([a-zA-Z0-9._]+)/);
-  if (m) return m[1];
-  if (/^[a-zA-Z0-9._]+$/.test(raw) && raw.includes('.')) return raw;
-  return null;
-}
-
-async function fetchGame(pkg) {
+async function fetchApp(id) {
+  const url = `https://itunes.apple.com/lookup?id=${encodeURIComponent(id)}&country=${COUNTRY}&lang=${LANG}`;
   try {
-    const g = await gplay.app({ appId: pkg, lang: LANG, country: COUNTRY });
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const js = await res.json();
+    if (!js.results || !js.results.length) return null;
+    const a = js.results[0];
+
+    const icon = a.artworkUrl512 || a.artworkUrl100 || a.artworkUrl60 || '';
+    let release = '';
+    if (a.releaseDate) { const d = new Date(a.releaseDate); if (!isNaN(d.getTime())) release = d.toISOString().substring(0, 10); }
+
+    let priceText = a.formattedPrice || '';
+    const priceNum = (typeof a.price === 'number') ? a.price : null;
+    const isFree = (priceNum === 0) || /free|gratis/i.test(priceText);
+    if (!priceText && isFree) priceText = 'Free';
+
+    // Categorie curata: scoatem "Games", pastram subcategoriile
+    const catList = Array.isArray(a.genres) ? a.genres.filter(x => x && x.toLowerCase() !== 'games') : [];
+    const category = catList.length ? catList.join(', ') : (a.primaryGenreName || '');
+
+    const ratingScore = (typeof a.averageUserRating === 'number') ? Math.round(a.averageUserRating * 10) / 10 : '';
+    const ratingCount = (typeof a.userRatingCount === 'number') ? a.userRatingCount : 0;
+
+    // IAP: aproximam (free -> probabil DA)
+    const iap = isFree ? 'TRUE' : '';  // gol la platite -> completare manuala
+
     return {
-      name: g.title || '',
-      developer: g.developer || '',
-      price: g.free ? 'Free' : (g.priceText || ''),
-      is_free: !!g.free,
-      rating: (typeof g.score === 'number') ? Math.round(g.score * 10) / 10 : '',
-      rating_count: (typeof g.ratings === 'number') ? g.ratings : '',
-      installs: g.installs || '',
-      min_installs: (typeof g.minInstalls === 'number') ? g.minInstalls : '',
-      category: g.genre || '',
-      release_date: g.released || '',
-      icon: g.icon || '',
-      in_app_purchases: g.offersIAP ? 'TRUE' : 'FALSE',
-      contains_ads: g.adSupported ? 'TRUE' : 'FALSE',
-      version: g.version || '',
-      url: g.url || `https://play.google.com/store/apps/details?id=${pkg}`,
+      name: a.trackName || '',
+      icon: icon,
+      url: a.trackViewUrl || '',
+      developer: a.artistName || a.sellerName || '',
+      release_date: release,
+      price: priceText,
+      rating_count: ratingCount,
+      rating_score: ratingScore,
+      category: category,
+      in_app_purchases: iap,
     };
-  } catch (e) {
-    return null; // joc negasit / eroare
-  }
+  } catch (e) { return null; }
 }
 
 async function main() {
   const auth = getAuth();
   const sheets = google.sheets({ version: 'v4', auth });
 
-  // 1) Citeste tot tab-ul PlayStore
-  const read = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}`,
-  });
+  const read = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: SHEET_NAME });
   const rows = read.data.values || [];
-  if (rows.length < 2) { console.log('Fila goala sau fara date.'); return; }
+  if (rows.length < 2) { console.log('Fila goala.'); return; }
 
   const header = rows[0].map(h => String(h).trim());
-  const col = {};
-  header.forEach((h, i) => { if (h) col[h] = i; });
+  const col = {}; header.forEach((h, i) => { if (h) col[h] = i; });
+  if (col['appstore_id'] === undefined) { console.error('Nu gasesc coloana appstore_id'); process.exit(1); }
 
-  if (col['package_id'] === undefined) { console.error('Nu gasesc coloana package_id'); process.exit(1); }
-
-  // Pregatim actualizarile (batch, ca sa scriem eficient)
   const updates = [];
   let processed = 0, failed = 0;
-
   const now = new Date().toLocaleString('ro-RO', { timeZone: 'Europe/Bucharest' });
 
   for (let r = 1; r < rows.length; r++) {
     if (LIMIT > 0 && processed >= LIMIT) break;
+    const id = String(rows[r][col['appstore_id']] || '').trim();
+    if (!/^\d+$/.test(id)) continue;
 
-    const raw = rows[r][col['package_id']] || '';
-    const pkg = extractPkg(raw);
-    if (!pkg) continue;
-
-    console.log(`[${r}] ${pkg} ...`);
-    const data = await fetchGame(pkg);
+    if (NEW_ONLY && col['name'] !== undefined && String(rows[r][col['name']]||'').trim() !== '') continue;
+    console.log(`[${r}] ${id} ...`);
+    const data = await fetchApp(id);
 
     if (data) {
-      // Pentru fiecare camp recunoscut care are coloana, pregatim update-ul
       Object.keys(data).forEach(key => {
         if (col[key] === undefined) return;
-        const colLetter = columnLetter(col[key]);
-        updates.push({
-          range: `${SHEET_NAME}!${colLetter}${r + 1}`,
-          values: [[data[key]]],
-        });
+        // nu scrie IAP gol peste valoare manuala existenta
+        if (key === 'in_app_purchases' && data[key] === '') return;
+        updates.push({ range: `${SHEET_NAME}!${colLetter(col[key])}${r + 1}`, values: [[data[key]]] });
       });
-      if (col['sync_status'] !== undefined) {
-        updates.push({ range: `${SHEET_NAME}!${columnLetter(col['sync_status'])}${r + 1}`, values: [['OK']] });
-      }
-      if (col['last_synced'] !== undefined) {
-        updates.push({ range: `${SHEET_NAME}!${columnLetter(col['last_synced'])}${r + 1}`, values: [[now]] });
-      }
+      if (col['sync_status'] !== undefined) updates.push({ range: `${SHEET_NAME}!${colLetter(col['sync_status'])}${r + 1}`, values: [['OK']] });
+      if (col['last_synced'] !== undefined) updates.push({ range: `${SHEET_NAME}!${colLetter(col['last_synced'])}${r + 1}`, values: [[now]] });
       processed++;
       console.log(`    OK: ${data.name}`);
     } else {
       failed++;
-      if (col['sync_status'] !== undefined) {
-        updates.push({ range: `${SHEET_NAME}!${columnLetter(col['sync_status'])}${r + 1}`, values: [['Not found']] });
-      }
-      console.log(`    esuat`);
+      if (col['sync_status'] !== undefined) updates.push({ range: `${SHEET_NAME}!${colLetter(col['sync_status'])}${r + 1}`, values: [['Not found']] });
+      console.log('    esuat');
     }
-
     await sleep(SLEEP_MS);
   }
 
-  // 2) Scrie toate actualizarile dintr-o data (batch)
   if (updates.length) {
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId: SPREADSHEET_ID,
       requestBody: { valueInputOption: 'USER_ENTERED', data: updates },
     });
   }
-
-  console.log(`\nGata. Procesate: ${processed}, esuate: ${failed}, celule actualizate: ${updates.length}`);
+  console.log(`\nGata. Procesate: ${processed}, esuate: ${failed}, celule: ${updates.length}`);
 }
 
-// Converteste index coloana (0-based) in litera A, B, ... Z, AA, AB...
-function columnLetter(idx) {
-  let s = '';
-  idx = idx + 1;
-  while (idx > 0) {
-    const m = (idx - 1) % 26;
-    s = String.fromCharCode(65 + m) + s;
-    idx = Math.floor((idx - 1) / 26);
-  }
+function colLetter(idx) {
+  let s = ''; idx = idx + 1;
+  while (idx > 0) { const m = (idx - 1) % 26; s = String.fromCharCode(65 + m) + s; idx = Math.floor((idx - 1) / 26); }
   return s;
 }
 
