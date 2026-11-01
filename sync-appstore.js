@@ -11,6 +11,7 @@ const COUNTRY = 'DE';      // DE = preturi in EUR
 const LANG = 'en_us';
 const SLEEP_MS = 1000;
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
+const NEW_ONLY = process.env.NEW_ONLY === '1';  // 1 = proceseaza doar randuri fara 'name'
 
 function getAuth() {
   const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
@@ -85,6 +86,7 @@ async function main() {
     const id = String(rows[r][col['appstore_id']] || '').trim();
     if (!/^\d+$/.test(id)) continue;
 
+    if (NEW_ONLY && col['name'] !== undefined && String(rows[r][col['name']]||'').trim() !== '') continue;
     console.log(`[${r}] ${id} ...`);
     const data = await fetchApp(id);
 
