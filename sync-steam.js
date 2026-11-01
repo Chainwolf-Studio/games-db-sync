@@ -10,7 +10,7 @@
  */
 
 import { google } from 'googleapis';
-import { extractSocial, blueskyFollowers, discordMembers, youtubeSubscribers } from './social-media.js';
+import { extractSocial, blueskyFollowers, discordMembers, youtubeSubscribers, twitchFollowers } from './social-media.js';
 
 const SPREADSHEET_ID = '1BSMwXovXJxuX8XyfQA5kxZJPT54Kgkpzg4APXDTZb7k';
 const SHEET_NAME = 'Steam';
@@ -29,7 +29,7 @@ const CATEGORY_MAP = {
   'Online Co-op':'online_coop','Shared/Split Screen Co-op':'split_coop','MMO':'mmo',
   'Cross-Platform Multiplayer':'cross_platform'
 };
-const BOOLEAN_FIELDS = ['demo_available','is_free','dlc_available','single_player','multiplayer','online_pvp','split_pvp','online_coop','split_coop','mmo','cross_platform','has_website','has_twitter','has_instagram','has_youtube','has_discord','has_bluesky'];
+const BOOLEAN_FIELDS = ['demo_available','is_free','dlc_available','single_player','multiplayer','online_pvp','split_pvp','online_coop','split_coop','mmo','cross_platform','has_website','has_twitter','has_instagram','has_youtube','has_discord','has_bluesky','has_facebook','has_tiktok','has_twitch'];
 
 function getAuth() {
   const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
@@ -122,6 +122,7 @@ async function fetchGame(appid){
   const youtube_subscribers = await youtubeSubscribers(social._youtube);
   const bluesky_followers = await blueskyFollowers(social._bluesky);
   const discord_members = await discordMembers(social._discord);
+  const twitch_followers = await twitchFollowers(social._twitch);
 
   const catNames = (g.categories||[]).map(c=>c.description);
   const features = {};
@@ -174,12 +175,16 @@ async function fetchGame(appid){
     mmo:features.mmo||false, cross_platform:features.cross_platform||false,
     has_website: social.has_website, has_twitter: social.has_twitter,
     has_instagram: social.has_instagram, has_youtube: social.has_youtube,
-    has_discord: social.has_discord, has_bluesky: social.has_bluesky,
+    has_discord: social.has_discord, has_bluesky: social.has_bluesky, has_facebook: social.has_facebook,
+    has_tiktok: social.has_tiktok, has_twitch: social.has_twitch,
     youtube_subscribers: youtube_subscribers,
     bluesky_followers: bluesky_followers,
     discord_members: discord_members,
     twitter_followers: 0,
-    instagram_followers: 0
+    instagram_followers: 0,
+    facebook_followers: 0,
+    tiktok_followers: 0,
+    twitch_followers: twitch_followers
   };
   if (havePrice){ out.price_current=priceCurrent; out.price_original=priceOriginal; out.price_discount=priceDiscount; out.price_source=priceSource; }
   if (summary){
