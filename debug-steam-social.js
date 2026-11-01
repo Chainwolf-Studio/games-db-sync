@@ -5,7 +5,7 @@ const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 async function main(){
   // Folosim un joc cu social media cunoscut. age check bypass cu birthtime cookie.
-  const appid = '1245620'; // Elden Ring - are social
+  const appid = '3815000'; // Elden Ring - are social
   const url = `https://store.steampowered.com/app/${appid}/`;
   console.log('Testez:', url);
 
