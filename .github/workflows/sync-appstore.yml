@@ -7,6 +7,10 @@ on:
         description: 'Cate jocuri (0 = toate, 2 pentru test)'
         required: false
         default: '0'
+      new_only:
+        description: 'Doar randuri noi? (1 = da, doar jocuri fara date)'
+        required: false
+        default: '0'
   schedule:
     - cron: '0 4 * * *'   # 04:00 UTC — ora diferita de Play Store ca sa nu se suprapuna
 
@@ -23,4 +27,5 @@ jobs:
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           LIMIT: ${{ github.event.inputs.limit }}
+          NEW_ONLY: ${{ github.event.inputs.new_only }}
         run: node sync-appstore.js
