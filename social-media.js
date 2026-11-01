@@ -15,12 +15,19 @@ export function extractSocial(html) {
   };
   if (!html) return result;
 
-  // Website: linkul "Visit the website" din apphub
-  const web = html.match(/href="(https?:\/\/[^"]+)"[^>]*>\s*<span>Visit the website/i)
-           || html.match(/class="[^"]*apphub_Card[^"]*"[^>]*href="(https?:\/\/[^"]+)"/i);
-  // mai simplu: cautam linkul oficial de website (steamcommunity linkout)
-  const webLink = html.match(/steampowered\.com\/linkfilter\/\?url=(https?[^"'&]+)/i);
-  if (webLink) { result.has_website = true; result._website = decodeURIComponent(webLink[1]); }
+  // Website: Steam arata un link "Visit the website". Poate fi:
+  //  - prin linkfilter: /linkfilter/?url=https://...
+  //  - direct, intr-un buton langa textul "Visit the website"
+  // Detectam prezenta textului SAU a linkfilter-ului.
+  const webFilter = html.match(/linkfilter\/\?(?:[^"']*&)?url=(https?[^"'&]+)/i);
+  if (webFilter) { result.has_website = true; result._website = decodeURIComponent(webFilter[1]); }
+  else if (/Visit the website/i.test(html)) {
+    // textul exista dar linkul nu e prin linkfilter — cautam href-ul din acelasi buton
+    const m = html.match(/href="(https?:\/\/[^"]+)"[^>]*class="[^"]*"[^>]*>\s*<span>\s*Visit the website/i)
+           || html.match(/<a[^>]+href="(https?:\/\/[^"]+)"[^>]*>[^<]*<span>Visit the website/i);
+    result.has_website = true;
+    if (m) result._website = m[1];
+  }
 
   const grab = (re) => { const m = html.match(re); return m ? m[0] : null; };
 
@@ -30,8 +37,25 @@ export function extractSocial(html) {
   const ig = grab(/instagram\.com\/([A-Za-z0-9_.]{2,40})/i);
   if (ig) { const h = ig.split('/').pop(); if (!['p','explore','accounts'].includes(h.toLowerCase())) { result.has_instagram = true; result._instagram = h; } }
 
-  const yt = grab(/youtube\.com\/(?:channel\/|c\/|user\/|@)([A-Za-z0-9_-]{2,40})/i);
-  if (yt) { result.has_youtube = true; result._youtube = yt; }
+  // YouTube: multiple formate — @handle, channel/ID, c/nume, user/nume, sau direct /nume
+  let ytMatch = grab(/youtube\.com\/(?:channel\/|c\/|user\/|@)[A-Za-z0-9_-]{2,40}/i);
+  if (!ytMatch) {
+    // format direct: youtube.com/NumeCanal (dar nu cuvinte rezervate)
+    const direct = grab(/youtube\.com\/([A-Za-z0-9_-]{3,40})/i);
+    if (direct) {
+      const name = direct.split('/').pop();
+      const reserved = ['watch','results','feed','playlist','embed','shorts','gaming','premium','about','hashtag'];
+      if (!reserved.includes(name.toLowerCase())) ytMatch = direct;
+    }
+  }
+  // accepta si youtu.be
+  if (!ytMatch) { const sb = grab(/youtu\.be\/[A-Za-z0-9_-]{3,40}/i); if (sb) ytMatch = sb; }
+  if (ytMatch) {
+    result.has_youtube = true;
+    // extragem partea de dupa youtube.com/ pentru API
+    const after = ytMatch.replace(/.*youtube\.com\//i, '').replace(/.*youtu\.be\//i, '');
+    result._youtube = after;
+  }
 
   const dc = grab(/discord\.(?:gg|com\/invite)\/([A-Za-z0-9]{4,20})/i);
   if (dc) { result.has_discord = true; result._discord = dc.split('/').pop(); }
