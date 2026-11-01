@@ -10,6 +10,7 @@
  */
 
 import { google } from 'googleapis';
+import { extractSocial, blueskyFollowers, discordMembers, youtubeSubscribers } from './social-media.js';
 
 const SPREADSHEET_ID = '1BSMwXovXJxuX8XyfQA5kxZJPT54Kgkpzg4APXDTZb7k';
 const SHEET_NAME = 'Steam';
@@ -28,7 +29,7 @@ const CATEGORY_MAP = {
   'Online Co-op':'online_coop','Shared/Split Screen Co-op':'split_coop','MMO':'mmo',
   'Cross-Platform Multiplayer':'cross_platform'
 };
-const BOOLEAN_FIELDS = ['demo_available','is_free','dlc_available','single_player','multiplayer','online_pvp','split_pvp','online_coop','split_coop','mmo','cross_platform'];
+const BOOLEAN_FIELDS = ['demo_available','is_free','dlc_available','single_player','multiplayer','online_pvp','split_pvp','online_coop','split_coop','mmo','cross_platform','has_website','has_twitter','has_instagram','has_youtube','has_discord','has_bluesky'];
 
 function getAuth() {
   const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
@@ -82,6 +83,18 @@ async function fetchFollowers(appid){
   return null;
 }
 
+
+async function fetchSteamPageHtml(appid){
+  try {
+    const res = await fetch(`https://store.steampowered.com/app/${appid}/`, {
+      headers: { 'User-Agent': UA, 'Cookie': 'birthtime=283996801; mature_content=1; wants_mature_content=1' },
+      redirect: 'follow'
+    });
+    if (res.status === 200) return await res.text();
+  } catch(e){}
+  return null;
+}
+
 async function fetchGame(appid){
   let g=null, usedRegion='', nonEuroRegion='';
 
@@ -102,6 +115,13 @@ async function fetchGame(appid){
   const isFree = !!g.is_free;
   const summary = await fetchReviews(appid, isFree);
   const followers = await fetchFollowers(appid);
+
+  // Social media din pagina Steam
+  const pageHtml = await fetchSteamPageHtml(appid);
+  const social = extractSocial(pageHtml);
+  const youtube_subscribers = await youtubeSubscribers(social._youtube);
+  const bluesky_followers = await blueskyFollowers(social._bluesky);
+  const discord_members = await discordMembers(social._discord);
 
   const catNames = (g.categories||[]).map(c=>c.description);
   const features = {};
@@ -151,7 +171,15 @@ async function fetchGame(appid){
     single_player:features.single_player||false, multiplayer:features.multiplayer||false,
     online_pvp:features.online_pvp||false, split_pvp:features.split_pvp||false,
     online_coop:features.online_coop||false, split_coop:features.split_coop||false,
-    mmo:features.mmo||false, cross_platform:features.cross_platform||false
+    mmo:features.mmo||false, cross_platform:features.cross_platform||false,
+    has_website: social.has_website, has_twitter: social.has_twitter,
+    has_instagram: social.has_instagram, has_youtube: social.has_youtube,
+    has_discord: social.has_discord, has_bluesky: social.has_bluesky,
+    youtube_subscribers: youtube_subscribers,
+    bluesky_followers: bluesky_followers,
+    discord_members: discord_members,
+    twitter_followers: 0,
+    instagram_followers: 0
   };
   if (havePrice){ out.price_current=priceCurrent; out.price_original=priceOriginal; out.price_discount=priceDiscount; out.price_source=priceSource; }
   if (summary){
