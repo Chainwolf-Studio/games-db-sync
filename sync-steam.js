@@ -19,6 +19,7 @@ const NONEURO_REGIONS = ['US', 'GB'];
 const REGION_CURRENCY = { US: 'USD', GB: 'GBP' };
 const SLEEP_MS = 2500;         // bland cu Akamai
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
+const NEW_ONLY = process.env.NEW_ONLY === '1';  // 1 = proceseaza doar randuri fara 'name'
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
 const CATEGORY_MAP = {
@@ -180,6 +181,7 @@ async function main(){
     const appid=String(rows[r][col['appid']]||'').trim();
     if (!/^\d+$/.test(appid)) continue;
 
+    if (NEW_ONLY && col['name'] !== undefined && String(rows[r][col['name']]||'').trim() !== '') continue;
     console.log(`[${r}] ${appid} ...`);
     const data=await fetchGame(appid);
 
