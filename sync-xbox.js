@@ -11,6 +11,7 @@ const MARKET = 'DE';       // DE = preturi in EUR
 const LANGUAGES = 'en-us';
 const SLEEP_MS = 1200;
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
+const NEW_ONLY = process.env.NEW_ONLY === '1';  // 1 = proceseaza doar randuri fara 'name'
 
 function getAuth() {
   const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
@@ -131,6 +132,7 @@ async function main() {
     const id = String(rows[r][col['store_id']] || '').trim();
     if (!/^[A-Za-z0-9]{10,14}$/.test(id)) continue;
 
+    if (NEW_ONLY && col['name'] !== undefined && String(rows[r][col['name']]||'').trim() !== '') continue;
     console.log(`[${r}] ${id} ...`);
     const data = await fetchGame(id);
 
