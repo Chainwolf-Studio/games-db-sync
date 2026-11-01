@@ -10,8 +10,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 export function extractSocial(html) {
   const result = {
     has_website: false, has_twitter: false, has_instagram: false,
-    has_youtube: false, has_discord: false, has_bluesky: false,
-    _twitter: null, _instagram: null, _youtube: null, _discord: null, _bluesky: null, _website: null
+    has_youtube: false, has_discord: false, has_bluesky: false, has_facebook: false, has_tiktok: false, has_twitch: false,
+    _twitter: null, _instagram: null, _youtube: null, _discord: null, _bluesky: null, _website: null, _facebook: null, _tiktok: null, _twitch: null
   };
   if (!html) return result;
 
@@ -38,6 +38,15 @@ export function extractSocial(html) {
 
   const bs = grab(/bsky\.app\/profile\/([A-Za-z0-9_.-]{2,60})/i);
   if (bs) { result.has_bluesky = true; result._bluesky = bs.split('/').pop(); }
+
+  const fb = grab(/facebook\.com\/([A-Za-z0-9_.-]{2,50})/i);
+  if (fb) { const h = fb.split('/').pop(); if (!['sharer','sharer.php','dialog','plugins','tr'].includes(h.toLowerCase())) { result.has_facebook = true; result._facebook = h; } }
+
+  const tk = grab(/tiktok\.com\/@([A-Za-z0-9_.]{2,30})/i);
+  if (tk) { result.has_tiktok = true; result._tiktok = tk.split('@').pop(); }
+
+  const tv = grab(/twitch\.tv\/([A-Za-z0-9_]{2,30})/i);
+  if (tv) { const h = tv.split('/').pop(); if (!['directory','p','videos'].includes(h.toLowerCase())) { result.has_twitch = true; result._twitch = h; } }
 
   return result;
 }
@@ -82,6 +91,46 @@ export async function youtubeSubscribers(channelRef) {
     if (!channelId) return 0;
     const stats = await fetch(`https://www.googleapis.com/youtube/v3/channels?part=statistics&id=${channelId}&key=${key}`);
     if (stats.ok) { const st = await stats.json(); if (st.items && st.items.length) return parseInt(st.items[0].statistics.subscriberCount || '0', 10); }
+  } catch (e) {}
+  return 0;
+}
+
+// Numar urmaritori Twitch (necesita TWITCH_CLIENT_ID + TWITCH_SECRET)
+let _twitchToken = null;
+async function getTwitchToken() {
+  if (_twitchToken) return _twitchToken;
+  const id = process.env.TWITCH_CLIENT_ID, secret = process.env.TWITCH_SECRET;
+  if (!id || !secret) return null;
+  try {
+    const res = await fetch('https://id.twitch.tv/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `client_id=${id}&client_secret=${secret}&grant_type=client_credentials`
+    });
+    if (res.ok) { const j = await res.json(); _twitchToken = j.access_token; return _twitchToken; }
+  } catch (e) {}
+  return null;
+}
+
+export async function twitchFollowers(login) {
+  if (!login) return 0;
+  const id = process.env.TWITCH_CLIENT_ID;
+  const token = await getTwitchToken();
+  if (!id || !token) return 0;
+  try {
+    // 1) login -> user id
+    const u = await fetch('https://api.twitch.tv/helix/users?login=' + encodeURIComponent(login), {
+      headers: { 'Client-ID': id, 'Authorization': 'Bearer ' + token }
+    });
+    if (!u.ok) return 0;
+    const uj = await u.json();
+    if (!uj.data || !uj.data.length) return 0;
+    const userId = uj.data[0].id;
+    // 2) numar urmaritori
+    const f = await fetch('https://api.twitch.tv/helix/channels/followers?broadcaster_id=' + userId, {
+      headers: { 'Client-ID': id, 'Authorization': 'Bearer ' + token }
+    });
+    if (f.ok) { const fj = await f.json(); if (typeof fj.total === 'number') return fj.total; }
   } catch (e) {}
   return 0;
 }
