@@ -10,6 +10,7 @@ const SPREADSHEET_ID = '1BSMwXovXJxuX8XyfQA5kxZJPT54Kgkpzg4APXDTZb7k';
 const SHEET_NAME = 'Nintendo';
 const SLEEP_MS = 2000;
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
+const NEW_ONLY = process.env.NEW_ONLY === '1';  // 1 = proceseaza doar randuri fara 'name'
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
 function getAuth() {
@@ -133,6 +134,7 @@ async function main() {
     const url = String(rows[r][col['nintendo_url']] || '').trim();
     if (!/^https?:\/\//i.test(url)) continue;
 
+    if (NEW_ONLY && col['name'] !== undefined && String(rows[r][col['name']]||'').trim() !== '') continue;
     console.log(`[${r}] ${url} ...`);
     const data = await fetchGame(url);
 
