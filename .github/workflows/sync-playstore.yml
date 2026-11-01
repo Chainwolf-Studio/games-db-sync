@@ -1,35 +1,31 @@
-name: Sync Play Store
+name: Sync App Store
 
 on:
-  # Rulare manuala (butonul "Run workflow" din tab-ul Actions)
   workflow_dispatch:
     inputs:
       limit:
-        description: 'Cate jocuri (0 = toate, pune 2 pentru test)'
+        description: 'Cate jocuri (0 = toate, 2 pentru test)'
         required: false
         default: '0'
-  # Rulare automata zilnica la 03:00 UTC (05:00 ora Romaniei vara)
+      new_only:
+        description: 'Doar randuri noi? (1 = da, doar jocuri fara date)'
+        required: false
+        default: '0'
   schedule:
-    - cron: '0 3 * * *'
+    - cron: '0 4 * * *'   # 04:00 UTC — ora diferita de Play Store ca sa nu se suprapuna
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install dependencies
-        run: npm install
-
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install
       - name: Run sync
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           LIMIT: ${{ github.event.inputs.limit }}
-        run: npm run sync
+          NEW_ONLY: ${{ github.event.inputs.new_only }}
+        run: node sync-appstore.js
