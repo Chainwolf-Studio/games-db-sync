@@ -28,4 +28,5 @@ jobs:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           LIMIT: ${{ github.event.inputs.limit }}
           NEW_ONLY: ${{ github.event.inputs.new_only }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: node sync-steam.js
