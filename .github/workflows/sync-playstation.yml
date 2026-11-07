@@ -11,8 +11,11 @@ on:
         description: 'Doar randuri noi? (1 = da, doar jocuri fara date)'
         required: false
         default: '0'
-  schedule:
-    - cron: '0 7 * * *'   # 07:00 UTC
+  workflow_call:
+
+concurrency:
+  group: ${{ github.event_name == 'schedule' && format('scheduled-playstation-{0}', github.run_id) || 'games-db-sheets-sync' }}
+  queue: max
 
 jobs:
   sync:

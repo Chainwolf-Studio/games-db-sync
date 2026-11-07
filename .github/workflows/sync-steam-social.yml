@@ -1,0 +1,39 @@
+name: Sync Steam Social
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Cate jocuri (0 = toate, 2 pentru test)'
+        required: false
+        default: '0'
+      new_only:
+        description: 'Doar randuri noi? (1 = da, doar jocuri fara date)'
+        required: false
+        default: '0'
+  schedule:
+    - cron: '17 14 * * 0'
+      timezone: Europe/Bucharest
+
+concurrency:
+  group: games-db-sheets-sync
+  queue: max
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm install
+      - name: Run sync
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          LIMIT: ${{ github.event.inputs.limit }}
+          NEW_ONLY: ${{ github.event.inputs.new_only }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_SECRET: ${{ secrets.TWITCH_SECRET }}
+        run: node sync-steam.js --social-only

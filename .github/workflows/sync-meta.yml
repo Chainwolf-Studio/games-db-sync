@@ -7,8 +7,11 @@ on:
         description: 'Cate jocuri (0 = toate, 2 pentru test)'
         required: false
         default: '0'
-  schedule:
-    - cron: '0 8 * * *'   # 08:00 UTC
+  workflow_call:
+
+concurrency:
+  group: ${{ github.event_name == 'schedule' && format('scheduled-meta-{0}', github.run_id) || 'games-db-sheets-sync' }}
+  queue: max
 
 jobs:
   sync:

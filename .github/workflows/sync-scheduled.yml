@@ -1,0 +1,54 @@
+name: Scheduled platform sync
+
+on:
+  schedule:
+    - cron: '17 5 * * *'
+      timezone: Europe/Bucharest
+    - cron: '17 19 * * *'
+      timezone: Europe/Bucharest
+
+concurrency:
+  group: games-db-sheets-sync
+  queue: max
+
+jobs:
+  playstore:
+    if: ${{ github.event.schedule == '17 5 * * *' }}
+    uses: ./.github/workflows/sync-playstore.yml
+    secrets: inherit
+
+  appstore:
+    needs: playstore
+    if: ${{ !cancelled() && github.event.schedule == '17 5 * * *' }}
+    uses: ./.github/workflows/sync-appstore.yml
+    secrets: inherit
+
+  xbox:
+    needs: appstore
+    if: ${{ !cancelled() && github.event.schedule == '17 5 * * *' }}
+    uses: ./.github/workflows/sync-xbox.yml
+    secrets: inherit
+
+  nintendo:
+    needs: xbox
+    if: ${{ !cancelled() && github.event.schedule == '17 5 * * *' }}
+    uses: ./.github/workflows/sync-nintendo.yml
+    secrets: inherit
+
+  playstation:
+    needs: nintendo
+    if: ${{ !cancelled() && github.event.schedule == '17 5 * * *' }}
+    uses: ./.github/workflows/sync-playstation.yml
+    secrets: inherit
+
+  meta:
+    needs: playstation
+    if: ${{ !cancelled() && github.event.schedule == '17 5 * * *' }}
+    uses: ./.github/workflows/sync-meta.yml
+    secrets: inherit
+
+  steam:
+    needs: meta
+    if: ${{ !cancelled() }}
+    uses: ./.github/workflows/sync-steam.yml
+    secrets: inherit

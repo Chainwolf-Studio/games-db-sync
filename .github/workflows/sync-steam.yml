@@ -11,8 +11,11 @@ on:
         description: 'Doar randuri noi? (1 = da, doar jocuri fara date)'
         required: false
         default: '0'
-  schedule:
-    - cron: '0 2 * * *'   # 02:00 UTC — inaintea celorlalte
+  workflow_call:
+
+concurrency:
+  group: ${{ github.event_name == 'schedule' && format('scheduled-steam-{0}', github.run_id) || 'games-db-sheets-sync' }}
+  queue: max
 
 jobs:
   sync:
@@ -28,7 +31,4 @@ jobs:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           LIMIT: ${{ github.event.inputs.limit }}
           NEW_ONLY: ${{ github.event.inputs.new_only }}
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
-          TWITCH_SECRET: ${{ secrets.TWITCH_SECRET }}
         run: node sync-steam.js

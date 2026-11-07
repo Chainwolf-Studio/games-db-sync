@@ -20,6 +20,7 @@ const NONEURO_REGIONS = ['US', 'GB'];
 const REGION_CURRENCY = { US: 'USD', GB: 'GBP' };
 const SLEEP_MS = 2500;         // bland cu Akamai
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
+const SOCIAL_ONLY = process.argv.includes('--social-only');
 const NEW_ONLY = process.env.NEW_ONLY === '1';  // 1 = proceseaza doar randuri fara 'name'
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
@@ -95,6 +96,31 @@ async function fetchSteamPageHtml(appid){
   return null;
 }
 
+async function fetchSocial(appid){
+  const pageHtml = await fetchSteamPageHtml(appid);
+  if (pageHtml === null) return null;
+  const social = extractSocial(pageHtml);
+  const youtube_subscribers = await youtubeSubscribers(social._youtube);
+  const bluesky_followers = await blueskyFollowers(social._bluesky);
+  const discord_members = await discordMembers(social._discord);
+  const twitch_followers = await twitchFollowers(social._twitch);
+
+  return {
+    has_website: social.has_website, has_twitter: social.has_twitter,
+    has_instagram: social.has_instagram, has_youtube: social.has_youtube,
+    has_discord: social.has_discord, has_bluesky: social.has_bluesky, has_facebook: social.has_facebook,
+    has_tiktok: social.has_tiktok, has_twitch: social.has_twitch,
+    youtube_subscribers: youtube_subscribers,
+    bluesky_followers: bluesky_followers,
+    discord_members: discord_members,
+    twitter_followers: 0,
+    instagram_followers: 0,
+    facebook_followers: 0,
+    tiktok_followers: 0,
+    twitch_followers: twitch_followers
+  };
+}
+
 async function fetchGame(appid){
   let g=null, usedRegion='', nonEuroRegion='';
 
@@ -115,14 +141,6 @@ async function fetchGame(appid){
   const isFree = !!g.is_free;
   const summary = await fetchReviews(appid, isFree);
   const followers = await fetchFollowers(appid);
-
-  // Social media din pagina Steam
-  const pageHtml = await fetchSteamPageHtml(appid);
-  const social = extractSocial(pageHtml);
-  const youtube_subscribers = await youtubeSubscribers(social._youtube);
-  const bluesky_followers = await blueskyFollowers(social._bluesky);
-  const discord_members = await discordMembers(social._discord);
-  const twitch_followers = await twitchFollowers(social._twitch);
 
   const catNames = (g.categories||[]).map(c=>c.description);
   const features = {};
@@ -173,18 +191,7 @@ async function fetchGame(appid){
     online_pvp:features.online_pvp||false, split_pvp:features.split_pvp||false,
     online_coop:features.online_coop||false, split_coop:features.split_coop||false,
     mmo:features.mmo||false, cross_platform:features.cross_platform||false,
-    has_website: social.has_website, has_twitter: social.has_twitter,
-    has_instagram: social.has_instagram, has_youtube: social.has_youtube,
-    has_discord: social.has_discord, has_bluesky: social.has_bluesky, has_facebook: social.has_facebook,
-    has_tiktok: social.has_tiktok, has_twitch: social.has_twitch,
-    youtube_subscribers: youtube_subscribers,
-    bluesky_followers: bluesky_followers,
-    discord_members: discord_members,
-    twitter_followers: 0,
-    instagram_followers: 0,
-    facebook_followers: 0,
-    tiktok_followers: 0,
-    twitch_followers: twitch_followers
+
   };
   if (havePrice){ out.price_current=priceCurrent; out.price_original=priceOriginal; out.price_discount=priceDiscount; out.price_source=priceSource; }
   if (summary){
@@ -216,7 +223,7 @@ async function main(){
 
     if (NEW_ONLY && col['name'] !== undefined && String(rows[r][col['name']]||'').trim() !== '') continue;
     console.log(`[${r}] ${appid} ...`);
-    const data=await fetchGame(appid);
+    const data = SOCIAL_ONLY ? await fetchSocial(appid) : await fetchGame(appid);
 
     if (data && !data.__notfound){
       Object.keys(data).forEach(key=>{
@@ -226,17 +233,17 @@ async function main(){
         if (BOOLEAN_FIELDS.includes(key)) val = val?'TRUE':'FALSE';
         updates.push({range:`${SHEET_NAME}!${colLetter(col[key])}${r+1}`, values:[[val]]});
       });
-      if (col['sync_status']!==undefined){
+      if (!SOCIAL_ONLY && col['sync_status']!==undefined){
         const note = (data.price_source && data.price_source.indexOf('converted')===0) ? 'OK — pret convertit' : 'OK';
         updates.push({range:`${SHEET_NAME}!${colLetter(col['sync_status'])}${r+1}`, values:[[note]]});
       }
-      if (col['last_synced']!==undefined) updates.push({range:`${SHEET_NAME}!${colLetter(col['last_synced'])}${r+1}`, values:[[now]]});
+      if (!SOCIAL_ONLY && col['last_synced']!==undefined) updates.push({range:`${SHEET_NAME}!${colLetter(col['last_synced'])}${r+1}`, values:[[now]]});
       processed++;
-      console.log(`    OK: ${data.name}`);
+      console.log(`    OK: ${data.name ?? appid}`);
     } else {
       // NU marcam Removed — doar semnalam verificare manuala, FARA sa atingem availability
       notfound++;
-      if (col['sync_status']!==undefined) updates.push({range:`${SHEET_NAME}!${colLetter(col['sync_status'])}${r+1}`, values:[['Nu s-a gasit — VERIFICA MANUAL']]});
+      if (!SOCIAL_ONLY && col['sync_status']!==undefined) updates.push({range:`${SHEET_NAME}!${colLetter(col['sync_status'])}${r+1}`, values:[['Nu s-a gasit — VERIFICA MANUAL']]});
       console.log('    nu s-a gasit');
     }
     await sleep(SLEEP_MS);
