@@ -13,7 +13,7 @@ import { google } from 'googleapis';
 // ---- Config ----
 const SPREADSHEET_ID = '1BSMwXovXJxuX8XyfQA5kxZJPT54Kgkpzg4APXDTZb7k';
 const SHEET_NAME = 'PlayStore';
-const COUNTRY = 'us';
+const COUNTRY = 'de'; // Piata Google Play cu preturi in EUR
 const LANG = 'en';
 const SLEEP_MS = 1500;        // pauza intre jocuri (bland cu Google)
 const LIMIT = parseInt(process.env.LIMIT || '0', 10);
@@ -45,7 +45,8 @@ async function fetchGame(pkg) {
     return {
       name: g.title || '',
       developer: g.developer || '',
-      price: g.free ? 'Free' : (g.priceText || ''),
+      price: g.free ? 'Free' : (g.currency === 'EUR' && Number.isFinite(g.price)
+        ? `${g.price.toFixed(2).replace('.', ',')} €` : ''),
       is_free: !!g.free,
       rating: (typeof g.score === 'number') ? Math.round(g.score * 10) / 10 : '',
       rating_count: (typeof g.ratings === 'number') ? g.ratings : '',

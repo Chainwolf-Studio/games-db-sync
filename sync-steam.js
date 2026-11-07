@@ -56,17 +56,21 @@ async function fetchJson(url){
 
 // NOUL API de recenzii (dupa 22 oct 2026)
 async function fetchReviews(appid, isFree){
-  // purchase_type: 0 = doar cumparatori Steam; languages:["all"] pentru total corect
-  const purchaseType = isFree ? 2 : 0; // free -> toate; platit -> doar cumparatori Steam
-  const input = { appids: String(appid), language: 'all', review_score_preference: 0, purchase_type: purchaseType, num_per_page: 0 };
+  const input = {
+    appid: Number(appid),
+    filter: 1,
+    languages: ['all'],
+    purchase_type: isFree ? 1 : 0,
+    num_per_page: 1,
+  };
   const url = 'https://api.steampowered.com/IUserReviewsService/GetAppReviews/v1/?input_json=' + encodeURIComponent(JSON.stringify(input));
   for (let a=0; a<=2; a++){
     const r = await fetchJson(url);
-    if (r.code===200 && r.json && r.json.response){
-      const sum = r.json.response.query_summary || r.json.response.summary || r.json.response;
-      if (sum && (sum.total_reviews !== undefined || sum.review_score_desc !== undefined)) return sum;
-    }
-    await sleep(1200*(a+1));
+    const summary = r.json?.response?.query_summary;
+    if (Number.isInteger(summary?.total_reviews) &&
+        (summary.total_reviews === 0 || Number.isInteger(summary.total_positive))) return summary;
+    if (a === 2) console.warn(`    Recenzii indisponibile pentru ${appid} (HTTP ${r.code})`);
+    else await sleep(1200 * (a + 1));
   }
   return null;
 }

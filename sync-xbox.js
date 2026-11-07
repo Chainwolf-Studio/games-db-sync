@@ -7,6 +7,7 @@ import { google } from 'googleapis';
 
 const SPREADSHEET_ID = '1BSMwXovXJxuX8XyfQA5kxZJPT54Kgkpzg4APXDTZb7k';
 const SHEET_NAME = 'Xbox';
+const HIDDEN_RELEASE_AND_PRICE_ID = '9p181zd79kg5';
 const MARKET = 'DE';       // DE = preturi in EUR
 const LANGUAGES = 'en-us';
 const SLEEP_MS = 1200;
@@ -135,6 +136,14 @@ async function main() {
     if (NEW_ONLY && col['name'] !== undefined && String(rows[r][col['name']]||'').trim() !== '') continue;
     console.log(`[${r}] ${id} ...`);
     const data = await fetchGame(id);
+    if (id.toLowerCase() === HIDDEN_RELEASE_AND_PRICE_ID) {
+      for (const key of ['release_date', 'price']) {
+        if (col[key] !== undefined) {
+          updates.push({ range: `${SHEET_NAME}!${colLetter(col[key])}${r + 1}`, values: [['']] });
+        }
+        if (data) delete data[key];
+      }
+    }
 
     if (data) {
       Object.keys(data).forEach(key => {

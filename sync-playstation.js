@@ -1,7 +1,7 @@
 /**
  * Sincronizare PlayStation -> Google Sheets (GitHub Actions).
  * Scraping PS Store (JSON-LD + __NEXT_DATA__ escape-uit).
- * Pret USD -> EUR. Cu rating si discount.
+ * Pret de cumparare convertit in EUR. Cu rating si discount.
  */
 
 import { google } from 'googleapis';
@@ -19,15 +19,57 @@ function getAuth() {
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-let _rate = null;
-async function getUsdToEur() {
-  if (_rate !== null) return _rate;
-  try {
-    const res = await fetch('https://api.frankfurter.app/latest?from=EUR&to=USD');
-    if (res.ok) { const j = await res.json(); _rate = (j.rates && j.rates.USD) ? (1 / j.rates.USD) : 0.92; return _rate; }
-  } catch (e) {}
-  _rate = 0.92; return _rate;
+let exchangeRates;
+async function getCurrencyToEur(currency) {
+  if (currency === 'EUR') return 1;
+  exchangeRates ??= (async () => {
+    try {
+      const res = await fetch('https://api.frankfurter.dev/v1/latest?base=EUR', {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (res.ok) return (await res.json()).rates;
+    } catch (e) {}
+    return null;
+  })();
+  const rate = (await exchangeRates)?.[currency];
+  return Number.isFinite(rate) && rate > 0 ? 1 / rate : null;
 }
+
+function findPurchasePrice(nextData) {
+  let data;
+  try {
+    data = JSON.parse(nextData);
+  } catch (e) {
+    return null;
+  }
+  const cta = data?.props?.pageProps?.batarangs?.cta?.text ?? '';
+  for (const [, payload] of cta.matchAll(/<script\b[^>]*type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    let cache;
+    try {
+      cache = JSON.parse(payload).cache;
+    } catch (e) {
+      continue;
+    }
+    for (const [key, offer] of Object.entries(cache ?? {})) {
+      const action = key.split(':')[1];
+      if (!key.startsWith('GameCTA:') || !['ADD_TO_CART', 'BUY_NOW', 'DOWNLOAD'].includes(action)) continue;
+      const price = offer?.price;
+      if (!price || price.isTiedToSubscription || price.isExclusive ||
+          price.serviceBranding?.some(brand => brand !== 'NONE') ||
+          (price.applicability && price.applicability !== 'APPLICABLE')) continue;
+
+      const base = price.basePriceValue;
+      const current = price.discountedValue ?? base;
+      if (!Number.isInteger(base) || base < 0 ||
+          !Number.isInteger(current) || current < 0 ||
+          (current === 0 && price.isFree !== true) ||
+          (action === 'DOWNLOAD' && current !== 0)) continue;
+      return { base, current, currency: price.currencyCode };
+    }
+  }
+  return null;
+}
+
 function formatEur(amount) {
   const n = Math.round(amount * 100) / 100;
   const p = n.toFixed(2).split('.');
@@ -115,19 +157,24 @@ async function fetchGame(url) {
     }
   }
 
-  // Pret din valori numerice (centi)
-  const base = grabNum('basePriceValue');
-  const disc = grabNum('discountedValue');
-  const rate = await getUsdToEur();
-  if (base !== null) {
-    const baseUsd = base / 100;
-    const finalUsd = (disc !== null) ? disc / 100 : baseUsd;
-    if (finalUsd === 0) out.price_current = 'Free';
-    else out.price_current = formatEur(finalUsd * rate);
-    if (disc !== null && disc < base) {
-      out.price_original = formatEur(baseUsd * rate);
-      out.price_discount = Math.round((1 - disc / base) * 100);
-    } else out.price_discount = 0;
+  const purchase = findPurchasePrice(j);
+  if (purchase) {
+    const { base, current, currency } = purchase;
+    const rate = current === 0 && base === 0 ? 1 : await getCurrencyToEur(currency);
+    if (rate !== null) {
+      const discounted = current < base;
+      const fractionDigits = currency && /^[A-Z]{3}$/.test(currency)
+        ? new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits
+        : 2;
+      const toEur = amount => formatEur(amount / 10 ** fractionDigits * rate);
+      out.price_current = current === 0 ? 'Free' : toEur(current);
+      out.price_original = discounted ? toEur(base) : '';
+      out.price_discount = discounted ? Math.round((1 - current / base) * 100) : 0;
+    } else {
+      console.warn(`    Curs EUR indisponibil pentru ${currency ?? 'moneda necunoscuta'}`);
+    }
+  } else {
+    console.warn('    Oferta de cumparare directa indisponibila');
   }
 
   return out;
