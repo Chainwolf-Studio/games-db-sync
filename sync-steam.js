@@ -142,7 +142,8 @@ async function fetchGame(appid){
   }
   if (!g) return { __notfound:true };
 
-  const isFree = !!g.is_free;
+  const comingSoon = !!g.release_date?.coming_soon;
+  const isFree = !comingSoon && !!g.is_free;
   const summary = await fetchReviews(appid, isFree);
   const followers = await fetchFollowers(appid);
 
@@ -154,7 +155,7 @@ async function fetchGame(appid){
   const isEuro = EURO_REGIONS.includes(usedRegion);
   let priceCurrent='', priceOriginal='', priceDiscount=0, priceSource='', havePrice=false;
   if (isFree){ priceCurrent='Free'; priceSource='free'; havePrice=true; }
-  else if (g.price_overview){
+  else if (g.price_overview && (!comingSoon || g.price_overview.final > 0)){
     const po=g.price_overview;
     if (nonEuroRegion){
       const cur=REGION_CURRENCY[nonEuroRegion]||'USD'; const rate=(await getRates())[cur];
@@ -163,9 +164,8 @@ async function fetchGame(appid){
       priceCurrent=po.final_formatted||''; priceDiscount=parseInt(po.discount_percent||0,10); if(priceDiscount>0&&po.initial_formatted) priceOriginal=po.initial_formatted; priceSource='EUR'; havePrice=(priceCurrent!=='');
     }
   }
-  const availability = (isFree || !!g.price_overview) ? 'Available' : 'Unavailable';
+  const availability = (g.is_free || !!g.price_overview) ? 'Available' : 'Unavailable';
 
-  const comingSoon = !!(g.release_date && g.release_date.coming_soon);
   let releaseText = (g.release_date && g.release_date.date) ? g.release_date.date : '';
   if (comingSoon && !releaseText) releaseText='Coming soon';
   if (!releaseText) releaseText='TBA';
@@ -198,6 +198,13 @@ async function fetchGame(appid){
 
   };
   if (havePrice){ out.price_current=priceCurrent; out.price_original=priceOriginal; out.price_discount=priceDiscount; out.price_source=priceSource; }
+  else if (comingSoon){
+    // Explicitly clear any stale price already stored in Sheets.
+    out.price_current = '';
+    out.price_original = '';
+    out.price_discount = '';
+    out.price_source = '';
+  }
   if (summary){
     const tot=Number(summary.total_reviews||0), pos=Number(summary.total_positive||0);
     out.review_rating = summary.review_score_desc||'';
